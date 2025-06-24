@@ -3,7 +3,7 @@ document.addEventListener("DOMContentLoaded", function () {
   const token = localStorage.getItem("token");
   const name = localStorage.getItem("name");
   if (!token) {
-    window.location.href = "index.html";
+    window.location.href = "/index.html";
     return;
   }
   document.getElementById("userGreeting").innerText = `👤 ${
@@ -11,7 +11,7 @@ document.addEventListener("DOMContentLoaded", function () {
   }`;
   document.getElementById("logoutBtn").addEventListener("click", function () {
     localStorage.clear();
-    window.location.href = "index.html";
+    window.location.href = "/index.html";
   });
 
   // --- Elements ---
@@ -24,8 +24,53 @@ document.addEventListener("DOMContentLoaded", function () {
   const deleteProductModal = new bootstrap.Modal(
     document.getElementById("deleteProductModal")
   );
+  const prodCategory = document.getElementById("prodCategory");
   let products = [];
+  let categories = [];
   let productToDeleteId = null;
+
+  // --- ปุ่มสุ่มบาร์โค้ด ---
+  document
+    .getElementById("generateBarcodeBtn")
+    .addEventListener("click", function () {
+      document.getElementById("prodBarcode").value = generateBarcode();
+      document.getElementById("prodBarcode").classList.remove("is-invalid");
+      document.getElementById("barcodeError").innerText = "";
+    });
+
+  function generateBarcode() {
+    let code = "";
+    for (let i = 0; i < 12; i++) code += Math.floor(Math.random() * 10);
+    let sum = 0;
+    for (let i = 0; i < 12; i++) sum += +code[i] * (i % 2 === 0 ? 1 : 3);
+    let checksum = (10 - (sum % 10)) % 10;
+    return code + checksum;
+  }
+
+  // --- โหลดหมวดหมู่จาก API (แสดงเฉพาะที่ is_active = true) ---
+  async function loadCategories(selectedId) {
+    prodCategory.innerHTML = '<option value="">-- เลือกประเภท --</option>';
+    try {
+      const res = await fetch(
+        "http://localhost:3000/api/categories?activeOnly=true",
+        {
+          headers: { Authorization: "Bearer " + token },
+        }
+      );
+      const data = await res.json();
+      categories = data.categories || data;
+      categories.forEach((cat) => {
+        const option = document.createElement("option");
+        option.value = cat.id;
+        option.textContent = cat.name;
+        if (selectedId && +selectedId === cat.id) option.selected = true;
+        prodCategory.appendChild(option);
+      });
+    } catch {
+      prodCategory.innerHTML =
+        '<option value="">โหลดประเภทสินค้าไม่สำเร็จ</option>';
+    }
+  }
 
   // --- โหลดสินค้าจาก API ---
   async function loadProducts() {
@@ -36,7 +81,7 @@ document.addEventListener("DOMContentLoaded", function () {
         headers: { Authorization: "Bearer " + token },
       });
       const data = await res.json();
-      products = data.products || data; // รองรับทั้ง {products:[]} หรือ []
+      products = data.products || data;
       renderTable();
     } catch (err) {
       emptyProductAlert.classList.remove("d-none");
@@ -56,25 +101,34 @@ document.addEventListener("DOMContentLoaded", function () {
       const tr = document.createElement("tr");
       tr.innerHTML = `
         <td>${idx + 1}</td>
+        <td>${prod.barcode || "-"}</td>
         <td>${prod.name}</td>
         <td>${prod.category_name || "-"}</td>
+        <td>${prod.unit || "-"}</td>
+        <td>฿${(+prod.cost_price).toFixed(2)}</td>
         <td>฿${(+prod.sell_price).toFixed(2)}</td>
         <td>${prod.stock_qty}</td>
         <td>
-          <span class="badge ${
-            prod.is_active ? "bg-success" : "bg-secondary"
-          }">${prod.is_active ? "เปิดขาย" : "ปิดขาย"}</span>
+          ${
+            prod.image_url
+              ? `<img src="${prod.image_url}" alt="" style="max-width:40px;max-height:40px;">`
+              : "-"
+          }
+        </td>
+        <td>
+          <span class="badge ${prod.is_active ? "bg-success" : "bg-secondary"}">
+            ${prod.is_active ? "เปิดขาย" : "ปิดขาย"}
+          </span>
         </td>
         <td>
           <button class="btn btn-sm btn-warning me-2 editBtn"><i class="bi bi-pencil"></i></button>
           <button class="btn btn-sm btn-danger deleteBtn"><i class="bi bi-trash"></i></button>
         </td>
       `;
-      // --- Edit ---
+      // เพิ่ม event edit, delete
       tr.querySelector(".editBtn").addEventListener("click", function () {
         openEditProductModal(prod);
       });
-      // --- Delete ---
       tr.querySelector(".deleteBtn").addEventListener("click", function () {
         productToDeleteId = prod.id;
         deleteProductModal.show();
@@ -83,15 +137,57 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
+  // --- Modal เพิ่ม/แก้ไข สินค้า ---
+  document
+    .getElementById("addProductBtn")
+    .addEventListener("click", function () {
+      productForm.reset();
+      document.getElementById("prodId").value = "";
+      document.getElementById("addProductModalLabel").innerText =
+        "เพิ่มสินค้าใหม่";
+      document.getElementById("prodBarcode").classList.remove("is-invalid");
+      document.getElementById("barcodeError").innerText = "";
+      loadCategories();
+      addProductModal.show();
+    });
+
   // --- เพิ่ม/แก้ไข สินค้า ---
   productForm.addEventListener("submit", async function (e) {
     e.preventDefault();
     const id = document.getElementById("prodId").value;
+    const barcode = document.getElementById("prodBarcode").value.trim();
+
+    // --- ตรวจสอบบาร์โค้ดซ้ำ ---
+    if (barcode) {
+      const check = await fetch(
+        `http://localhost:3000/api/products/barcode/${barcode}${
+          id ? `?exclude=${id}` : ""
+        }`,
+        {
+          headers: { Authorization: "Bearer " + token },
+        }
+      );
+      const checkData = await check.json();
+      if (check.ok && checkData.duplicate) {
+        document.getElementById("barcodeError").innerText =
+          "บาร์โค้ดนี้มีในระบบแล้ว";
+        document.getElementById("prodBarcode").classList.add("is-invalid");
+        return;
+      } else {
+        document.getElementById("barcodeError").innerText = "";
+        document.getElementById("prodBarcode").classList.remove("is-invalid");
+      }
+    }
+
     const body = {
+      barcode: barcode,
       name: document.getElementById("prodName").value.trim(),
-      category: document.getElementById("prodCategory").value.trim(),
-      sell_price: +document.getElementById("prodPrice").value,
-      stock_qty: +document.getElementById("prodStock").value,
+      category_id: document.getElementById("prodCategory").value || null,
+      unit: document.getElementById("prodUnit").value.trim(),
+      cost_price: +document.getElementById("prodCostPrice").value || 0,
+      sell_price: +document.getElementById("prodSellPrice").value || 0,
+      stock_qty: +document.getElementById("prodStock").value || 0,
+      image_url: document.getElementById("prodImageUrl").value.trim(),
       is_active: document.getElementById("prodStatus").value === "true",
     };
     try {
@@ -123,10 +219,16 @@ document.addEventListener("DOMContentLoaded", function () {
   function openEditProductModal(prod) {
     document.getElementById("addProductModalLabel").innerText = "แก้ไขสินค้า";
     document.getElementById("prodId").value = prod.id;
+    document.getElementById("prodBarcode").value = prod.barcode || "";
+    document.getElementById("prodBarcode").classList.remove("is-invalid");
+    document.getElementById("barcodeError").innerText = "";
     document.getElementById("prodName").value = prod.name;
-    document.getElementById("prodCategory").value = prod.category_name || "";
-    document.getElementById("prodPrice").value = prod.sell_price;
+    loadCategories(prod.category_id);
+    document.getElementById("prodUnit").value = prod.unit || "";
+    document.getElementById("prodCostPrice").value = prod.cost_price || "";
+    document.getElementById("prodSellPrice").value = prod.sell_price;
     document.getElementById("prodStock").value = prod.stock_qty;
+    document.getElementById("prodImageUrl").value = prod.image_url || "";
     document.getElementById("prodStatus").value = prod.is_active
       ? "true"
       : "false";
@@ -141,6 +243,8 @@ document.addEventListener("DOMContentLoaded", function () {
       document.getElementById("prodId").value = "";
       document.getElementById("addProductModalLabel").innerText =
         "เพิ่มสินค้าใหม่";
+      document.getElementById("prodBarcode").classList.remove("is-invalid");
+      document.getElementById("barcodeError").innerText = "";
     });
 
   // --- ลบสินค้า ---

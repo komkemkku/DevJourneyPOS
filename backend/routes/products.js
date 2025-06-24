@@ -4,7 +4,7 @@ const jwtUtil = require("../jwt");
 
 const router = express.Router();
 
-// Middleware: Auth Guard
+// Auth Guard Middleware
 function authGuard(req, res, next) {
   const authHeader = req.headers["authorization"];
   if (!authHeader) return res.status(401).json({ message: "Unauthorized" });
@@ -21,7 +21,6 @@ function authGuard(req, res, next) {
 // GET /api/products
 router.get("/", authGuard, async (req, res) => {
   try {
-    // join กับ category_name ตัวอย่าง (กรณีมีหมวดหมู่)
     const result = await db.query(`
       SELECT p.*, c.name AS category_name
       FROM products p
@@ -34,26 +33,67 @@ router.get("/", authGuard, async (req, res) => {
   }
 });
 
+// GET /api/products/barcode/:barcode
+// ตรวจสอบบาร์โค้ดซ้ำ (รองรับ ?exclude=<id>)
+router.get("/barcode/:barcode", authGuard, async (req, res) => {
+  const { barcode } = req.params;
+  const excludeId = req.query.exclude;
+  try {
+    let result;
+    if (excludeId) {
+      result = await db.query(
+        "SELECT id FROM products WHERE barcode = $1 AND id != $2",
+        [barcode, excludeId]
+      );
+    } else {
+      result = await db.query("SELECT id FROM products WHERE barcode = $1", [
+        barcode,
+      ]);
+    }
+    res.json({ duplicate: result.rows.length > 0 });
+  } catch {
+    res.status(500).json({ message: "เช็คบาร์โค้ดล้มเหลว" });
+  }
+});
+
 // POST /api/products
 router.post("/", authGuard, async (req, res) => {
-  const { name, category, sell_price, stock_qty, is_active } = req.body;
+  const {
+    barcode,
+    name,
+    category_id,
+    unit,
+    cost_price,
+    sell_price,
+    stock_qty,
+    image_url,
+    is_active,
+  } = req.body;
   try {
-    // หา category_id (ถ้าเป็นชื่อให้ query ก่อน, ตัวอย่างนี้ assume มี category_id แล้ว)
-    let category_id = null;
-    if (category) {
-      const cat = await db.query(
-        "SELECT id FROM product_categories WHERE name = $1",
-        [category]
-      );
-      if (cat.rows.length > 0) category_id = cat.rows[0].id;
-    }
     const result = await db.query(
-      `INSERT INTO products (name, category_id, sell_price, stock_qty, is_active)
-       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [name, category_id, sell_price, stock_qty, is_active]
+      `INSERT INTO products
+        (barcode, name, category_id, unit, cost_price, sell_price, stock_qty, image_url, is_active, created_at, updated_at)
+       VALUES
+        ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
+       RETURNING *`,
+      [
+        barcode || null,
+        name,
+        category_id || null,
+        unit,
+        cost_price,
+        sell_price,
+        stock_qty,
+        image_url,
+        is_active,
+      ]
     );
     res.json(result.rows[0]);
   } catch (err) {
+    // เช็ค unique constraint บาร์โค้ด
+    if (err.code === "23505") {
+      return res.status(400).json({ message: "บาร์โค้ดนี้มีในระบบแล้ว" });
+    }
     res.status(500).json({ message: "เกิดข้อผิดพลาด" });
   }
 });
@@ -61,23 +101,50 @@ router.post("/", authGuard, async (req, res) => {
 // PUT /api/products/:id
 router.put("/:id", authGuard, async (req, res) => {
   const { id } = req.params;
-  const { name, category, sell_price, stock_qty, is_active } = req.body;
+  const {
+    barcode,
+    name,
+    category_id,
+    unit,
+    cost_price,
+    sell_price,
+    stock_qty,
+    image_url,
+    is_active,
+  } = req.body;
   try {
-    let category_id = null;
-    if (category) {
-      const cat = await db.query(
-        "SELECT id FROM product_categories WHERE name = $1",
-        [category]
-      );
-      if (cat.rows.length > 0) category_id = cat.rows[0].id;
-    }
     const result = await db.query(
-      `UPDATE products SET name=$1, category_id=$2, sell_price=$3, stock_qty=$4, is_active=$5, updated_at=NOW()
-       WHERE id=$6 RETURNING *`,
-      [name, category_id, sell_price, stock_qty, is_active, id]
+      `UPDATE products SET
+        barcode = $1,
+        name = $2,
+        category_id = $3,
+        unit = $4,
+        cost_price = $5,
+        sell_price = $6,
+        stock_qty = $7,
+        image_url = $8,
+        is_active = $9,
+        updated_at = NOW()
+       WHERE id = $10
+       RETURNING *`,
+      [
+        barcode || null,
+        name,
+        category_id || null,
+        unit,
+        cost_price,
+        sell_price,
+        stock_qty,
+        image_url,
+        is_active,
+        id,
+      ]
     );
     res.json(result.rows[0]);
   } catch (err) {
+    if (err.code === "23505") {
+      return res.status(400).json({ message: "บาร์โค้ดนี้มีในระบบแล้ว" });
+    }
     res.status(500).json({ message: "เกิดข้อผิดพลาด" });
   }
 });

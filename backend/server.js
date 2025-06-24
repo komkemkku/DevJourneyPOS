@@ -18,6 +18,15 @@ app.use("/api/login", authRouter);
 const productRouter = require("./routes/products");
 app.use("/api/products", productRouter);
 
+const categoriesRouter = require("./routes/categories");
+app.use("/api/categories", categoriesRouter);
+
+const pointsRouter = require("./routes/points");
+app.use("/api/points", pointsRouter);
+
+const customersRouter = require("./routes/customers");
+app.use("/api/customers", customersRouter);
+
 //  protected profile
 const jwtUtil = require("./jwt");
 app.get("/api/profile", (req, res) => {

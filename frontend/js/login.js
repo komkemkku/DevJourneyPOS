@@ -6,12 +6,14 @@ document.addEventListener("DOMContentLoaded", function () {
   const togglePassword = document.getElementById("togglePassword");
   const eyeIcon = document.getElementById("eyeIcon");
 
-  // Toggle password visibility
-  togglePassword.addEventListener("click", function () {
-    const type = passwordInput.type === "password" ? "text" : "password";
-    passwordInput.type = type;
-    eyeIcon.className = type === "password" ? "bi bi-eye" : "bi bi-eye-slash";
-  });
+  // Toggle password visibility (ถ้ามี togglePassword)
+  if (togglePassword && eyeIcon) {
+    togglePassword.addEventListener("click", function () {
+      const type = passwordInput.type === "password" ? "text" : "password";
+      passwordInput.type = type;
+      eyeIcon.className = type === "password" ? "bi bi-eye" : "bi bi-eye-slash";
+    });
+  }
 
   // login form submit
   loginForm.addEventListener("submit", async function (e) {
@@ -21,19 +23,24 @@ document.addEventListener("DOMContentLoaded", function () {
     loginAlert.classList.add("d-none");
 
     try {
-      // fetch ไป backend api (ถ้าแยกฝั่ง backend ต้องใส่ http://localhost:3000)
       const response = await fetch("http://localhost:3000/api/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password }),
       });
-      const data = await response.json();
 
-      if (response.ok) {
+      let data;
+      try {
+        data = await response.json();
+      } catch (err) {
+        data = {};
+      }
+
+      if (response.ok && data.token) {
         localStorage.setItem("token", data.token);
         localStorage.setItem("name", data.name);
         localStorage.setItem("role", data.role);
-        window.location.href = "/frontend/main.html";
+        window.location.href = "/frontend/main.html"; // ไปหน้า main หลัก POS
       } else {
         showAlert(data.message || "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง");
         passwordInput.value = "";
@@ -44,6 +51,7 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   });
 
+  // input remove alert
   [usernameInput, passwordInput].forEach((input) => {
     input.addEventListener("input", function () {
       loginAlert.classList.add("d-none");
