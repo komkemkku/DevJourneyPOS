@@ -13,3 +13,9 @@ body.bg-main {
   border-radius: 1rem;
   overflow: hidden;
 }
+
+/* ทำให้ไอคอน modal delete ดูเด่น */
+.modal-content .bi-exclamation-triangle-fill {
+  font-size: 2.7rem;
+  margin-bottom: 0.5rem;
+}

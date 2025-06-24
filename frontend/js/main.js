@@ -1,6 +1,5 @@
-// js/main.js
 document.addEventListener("DOMContentLoaded", function () {
-  // --- Auth check ---
+  // --- Auth ---
   const token = localStorage.getItem("token");
   const name = localStorage.getItem("name");
   const role = localStorage.getItem("role");
@@ -16,7 +15,7 @@ document.addEventListener("DOMContentLoaded", function () {
     window.location.href = "index.html";
   };
 
-  // --- Backoffice ---
+  // --- Backoffice Btn ---
   const backofficeBtn = document.getElementById("backBtn");
   if (role === "admin" || role === "manager") {
     backofficeBtn.style.display = "";
@@ -61,7 +60,7 @@ document.addEventListener("DOMContentLoaded", function () {
         opt.textContent = `${cust.name} (${cust.phone || ""})`;
         customerSelect.appendChild(opt);
       });
-    } catch (e) {
+    } catch {
       customerSelect.innerHTML = '<option value="">โหลดลูกค้าไม่ได้</option>';
     }
   }
@@ -82,7 +81,7 @@ document.addEventListener("DOMContentLoaded", function () {
       if (!res.ok) throw new Error(data.message || "โหลดสินค้าล้มเหลว");
       products = (data.products || data).filter(
         (prod) => prod.is_active !== false
-      ); // เฉพาะที่เปิดขาย
+      );
       renderProductList();
     } catch (err) {
       productNotFound.innerText = err.message;
@@ -92,6 +91,7 @@ document.addEventListener("DOMContentLoaded", function () {
     }
   }
 
+  // --- Render products ---
   function renderProductList() {
     productList.innerHTML = "";
     if (!products.length) {
@@ -113,7 +113,9 @@ document.addEventListener("DOMContentLoaded", function () {
             <div class="mb-2 small">คงเหลือ: ${prod.stock_qty}</div>
             <button class="btn btn-sm btn-primary addToCartBtn" ${
               prod.stock_qty <= 0 ? "disabled" : ""
-            }><i class="bi bi-cart-plus"></i> หยิบใส่ตะกร้า</button>
+            }>
+              <i class="bi bi-cart-plus"></i> หยิบใส่ตะกร้า
+            </button>
           </div>
         </div>
       `;
@@ -124,6 +126,7 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
+  // --- Cart functions ---
   function addToCart(productId) {
     const prod = products.find((p) => p.id === productId);
     if (!prod) return;
@@ -201,12 +204,13 @@ document.addEventListener("DOMContentLoaded", function () {
 
   paymentAmount.oninput = updateChange;
 
+  // --- Search ---
   searchForm.onsubmit = function (e) {
     e.preventDefault();
     loadProducts(searchInput.value.trim());
   };
 
-  // --- ยืนยันขาย ---
+  // --- Checkout / Sale ---
   checkoutForm.onsubmit = async function (e) {
     e.preventDefault();
     if (!cart.length) return;
@@ -219,7 +223,9 @@ document.addEventListener("DOMContentLoaded", function () {
       return;
     }
     saleError.classList.add("d-none");
+
     try {
+      // ส่งไป backend ให้สอดคล้องกับ sales/sale_items
       const res = await fetch("http://localhost:3000/api/sales", {
         method: "POST",
         headers: {
@@ -228,19 +234,23 @@ document.addEventListener("DOMContentLoaded", function () {
         },
         body: JSON.stringify({
           customer_id: customerSelect.value || null,
-          cart: cart.map((i) => ({
+          payment_method: "เงินสด",
+          received_amount: paid,
+          change_amount: paid - total,
+          total_amount: total,
+          sale_items: cart.map((i) => ({
             product_id: i.id,
-            qty: i.qty,
-            price: i.sell_price,
+            quantity: i.qty,
+            unit_price: i.sell_price,
+            cost_price: i.cost_price,
+            total_price: i.qty * i.sell_price,
           })),
-          total,
-          paid,
-          change: paid - total,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || "เกิดข้อผิดพลาด");
       saleSuccess.classList.remove("d-none");
+      saleSuccess.innerText = "ขายสินค้าสำเร็จ!";
       setTimeout(() => saleSuccess.classList.add("d-none"), 2000);
       cart = [];
       renderCart();
