@@ -1,12 +1,12 @@
 const express = require("express");
 const bcrypt = require("bcrypt");
-const db = require("../db");
-const jwtUtil = require("../jwt");
+const db = require("../../db");
+const jwtUtil = require("../../jwt");
 
 const router = express.Router();
 
 // POST /api/login
-router.post("/login", async (req, res) => {
+router.post("/", async (req, res) => {
   const { username, password } = req.body;
   try {
     const result = await db.query(
