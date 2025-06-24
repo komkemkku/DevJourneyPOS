@@ -1,0 +1,47 @@
+# Node.js dependencies
+node_modules/
+
+# Local env config
+.env
+.env.*
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Editor config/junk
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# Log files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build output
+dist/
+build/
+*.log
+
+# Coverage & test
+coverage/
+*.lcov
+
+# Production files
+frontend/.cache/
+frontend/dist/
+frontend/build/
+backend/.cache/
+backend/dist/
+backend/build/
+
+# Others (ถ้ามี)
+*.sqlite
+*.bak
+*.tmp
+
+# Optional: ignore generated files from DBeaver, DB GUI, etc.
+*.dbeaver-data-sources.xml
