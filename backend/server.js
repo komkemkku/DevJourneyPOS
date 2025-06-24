@@ -27,6 +27,9 @@ app.use("/api/points", pointsRouter);
 const customersRouter = require("./routes/customers");
 app.use("/api/customers", customersRouter);
 
+const promotionRouter = require("./routes/promotions");
+app.use("/api/promotions", promotionRouter);
+
 //  protected profile
 const jwtUtil = require("./jwt");
 app.get("/api/profile", (req, res) => {

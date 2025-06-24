@@ -1,0 +1,15 @@
+body.bg-main {
+  background: #f6f9ff;
+}
+.card {
+  border-radius: 1.5rem;
+}
+.btn-success,
+.btn-primary {
+  border-radius: 1rem;
+}
+.table {
+  background: #fff;
+  border-radius: 1rem;
+  overflow: hidden;
+}
