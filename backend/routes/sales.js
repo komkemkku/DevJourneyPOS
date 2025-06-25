@@ -3,7 +3,7 @@ const db = require("../db");
 const jwtUtil = require("../jwt");
 const router = express.Router();
 
-// Auth
+// Auth Middleware
 function authGuard(req, res, next) {
   const authHeader = req.headers["authorization"];
   if (!authHeader) return res.status(401).json({ message: "Unauthorized" });
@@ -17,42 +17,47 @@ function authGuard(req, res, next) {
   }
 }
 
-// สร้างการขาย (พร้อมสินค้า)
+// --- สร้างบิลขายใหม่ (และลด stock อัตโนมัติ) ---
 router.post("/", authGuard, async (req, res) => {
   const {
     customer_id,
-    user_id,
     payment_method,
     received_amount,
     change_amount,
     total_amount,
-    sale_items, // array: [{ product_id, quantity, unit_price, cost_price, total_price }]
     remark,
+    sale_items, // array [{ product_id, quantity, unit_price, cost_price, total_price }]
   } = req.body;
 
+  const user_id = req.user.id;
   const client = await db.connect();
   try {
     await client.query("BEGIN");
-    // 1. Insert sales
+    const nowTs = Math.floor(Date.now() / 1000);
+    const receiptNo = "R" + nowTs;
+
+    // Insert sales
     const saleResult = await client.query(
       `INSERT INTO sales
         (receipt_no, sale_datetime, user_id, customer_id, total_amount, payment_method, received_amount, change_amount, remark)
        VALUES
-        (concat('R', extract(epoch from now())::int), NOW(), $1, $2, $3, $4, $5, $6, $7)
+        ($1, NOW(), $2, $3, $4, $5, $6, $7, $8)
        RETURNING *`,
       [
+        receiptNo,
         user_id,
-        customer_id,
+        customer_id || null,
         total_amount,
         payment_method,
         received_amount,
         change_amount,
-        remark,
+        remark || null,
       ]
     );
-    const sale_id = saleResult.rows[0].id;
+    const sale = saleResult.rows[0];
+    const sale_id = sale.id;
 
-    // 2. Insert sale_items
+    // Insert sale_items
     for (const item of sale_items) {
       await client.query(
         `INSERT INTO sale_items
@@ -68,14 +73,20 @@ router.post("/", authGuard, async (req, res) => {
           item.remark || null,
         ]
       );
-      // 3. อัปเดต stock ที่ product (ลดสต็อก)
+      // อัปเดต stock
       await client.query(
         `UPDATE products SET stock_qty = stock_qty - $1 WHERE id=$2`,
         [item.quantity, item.product_id]
       );
     }
+
     await client.query("COMMIT");
-    res.json({ sale_id, message: "ขายสินค้าสำเร็จ" });
+    res.json({
+      ...sale,
+      id: sale.id,
+      sale_id: sale.id,
+      message: "ขายสินค้าสำเร็จ",
+    });
   } catch (err) {
     await client.query("ROLLBACK");
     res.status(500).json({ message: "ผิดพลาด", error: err.message });
@@ -84,36 +95,41 @@ router.post("/", authGuard, async (req, res) => {
   }
 });
 
-// ประวัติการขาย (ทุกบิล)
-router.get("/", authGuard, async (req, res) => {
-  try {
-    const result = await db.query(
-      `SELECT s.*, c.name AS customer_name, u.name AS user_name
-       FROM sales s
-       LEFT JOIN customers c ON s.customer_id = c.id
-       LEFT JOIN users u ON s.user_id = u.id
-       ORDER BY s.sale_datetime DESC`
-    );
-    res.json({ sales: result.rows });
-  } catch (err) {
-    res.status(500).json({ message: "ผิดพลาด" });
-  }
-});
-
-// ดูสินค้าในบิล
-router.get("/:sale_id/items", authGuard, async (req, res) => {
+// --- ดูสินค้าในบิลเดียว + ใบเสร็จ + settings ---
+router.get("/:sale_id/receipt", authGuard, async (req, res) => {
   const { sale_id } = req.params;
   try {
-    const result = await db.query(
-      `SELECT si.*, p.name AS product_name
+    // 1. รายละเอียดบิล
+    const sale = await db.query(
+      `SELECT s.*, c.name AS customer_name, c.phone, u.name AS user_name
+         FROM sales s
+         LEFT JOIN customers c ON s.customer_id = c.id
+         LEFT JOIN users u ON s.user_id = u.id
+         WHERE s.id = $1`,
+      [sale_id]
+    );
+    if (sale.rows.length === 0) {
+      return res.status(404).json({ message: "ไม่พบใบเสร็จ" });
+    }
+    // 2. รายการสินค้า (!!! ไม่มี p.code เปลี่ยนเป็น p.barcode)
+    const items = await db.query(
+      `SELECT si.*, p.name AS product_name, p.barcode
        FROM sale_items si
        LEFT JOIN products p ON si.product_id = p.id
        WHERE si.sale_id = $1`,
       [sale_id]
     );
-    res.json({ items: result.rows });
+    // 3. Settings ร้านค้า (ดึงแค่ row เดียว)
+    const settings = await db.query(
+      `SELECT * FROM settings ORDER BY id LIMIT 1`
+    );
+    res.json({
+      sale: sale.rows[0],
+      items: items.rows,
+      settings: settings.rows[0] || {},
+    });
   } catch (err) {
-    res.status(500).json({ message: "ผิดพลาด" });
+    res.status(500).json({ message: "ผิดพลาด", error: err.message });
   }
 });
 

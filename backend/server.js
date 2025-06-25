@@ -33,6 +33,19 @@ app.use("/api/promotions", promotionRouter);
 const salesRouter = require("./routes/sales");
 app.use("/api/sales", salesRouter);
 
+const usersRouter = require("./routes/users");
+app.use("/api/users", usersRouter);
+
+const settingsRouter = require("./routes/settings");
+app.use("/api/settings", settingsRouter);
+
+const printersRouter = require("./routes/printers");
+app.use("/api/printers", printersRouter);
+
+const stockMovementRouter = require("./routes/stock_movements");
+app.use("/api/stock-movements", stockMovementRouter);
+
+
 //  protected profile
 const jwtUtil = require("./jwt");
 app.get("/api/profile", (req, res) => {
