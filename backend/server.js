@@ -14,7 +14,6 @@ app.use(bodyParser.json());
 const authRouter = require("./routes/auth/login");
 app.use("/api/login", authRouter);
 
-// Products CRUD
 const productRouter = require("./routes/products");
 app.use("/api/products", productRouter);
 
@@ -45,7 +44,6 @@ app.use("/api/printers", printersRouter);
 const stockMovementRouter = require("./routes/stock_movements");
 app.use("/api/stock-movements", stockMovementRouter);
 
-
 //  protected profile
 const jwtUtil = require("./jwt");
 app.get("/api/profile", (req, res) => {
@@ -59,6 +57,19 @@ app.get("/api/profile", (req, res) => {
   } catch (err) {
     res.sendStatus(403);
   }
+});
+
+// Handle 404
+app.use((req, res, next) => {
+  res.status(404).json({ message: "ไม่พบเส้นทางนี้ (API Not Found)" });
+});
+
+// Error Handler
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res
+    .status(500)
+    .json({ message: "เกิดข้อผิดพลาดในเซิร์ฟเวอร์", error: err.message });
 });
 
 app.listen(PORT, () => {
