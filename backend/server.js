@@ -10,7 +10,7 @@ const PORT = process.env.PORT || 3000;
 app.use(cors({
   origin: [
     "http://localhost:5500",
-    "https://https://dev-journey-pos.vercel.app/",
+    "https://dev-journey-pos.vercel.app",
     "https://devjourneypos-production.up.railway.app"
   ],
   credentials: true
