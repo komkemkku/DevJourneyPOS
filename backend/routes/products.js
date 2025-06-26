@@ -1,10 +1,8 @@
 const express = require("express");
 const db = require("../db");
 const jwtUtil = require("../jwt");
-
 const router = express.Router();
 
-// Auth Guard Middleware
 function authGuard(req, res, next) {
   const authHeader = req.headers["authorization"];
   if (!authHeader) return res.status(401).json({ message: "Unauthorized" });
@@ -18,42 +16,53 @@ function authGuard(req, res, next) {
   }
 }
 
-// GET /api/products?is_active=true&category_id=...&search=...
+// GET /api/products (รองรับ search และ category_id)
 router.get("/", authGuard, async (req, res) => {
-  try {
-    let { is_active, category_id, search } = req.query;
-    let wheres = [];
-    let params = [];
+  let { page = 1, pageSize = 10, search = "", category_id = "" } = req.query;
+  page = parseInt(page);
+  pageSize = parseInt(pageSize);
 
-    // ใช้เฉพาะฝั่ง POS (ถ้าไม่ส่งมาก็ไม่กรอง)
-    if (typeof is_active !== "undefined") {
-      params.push(is_active === "true" ? true : false);
-      wheres.push(`p.is_active = $${params.length}`);
-    }
-    if (category_id) {
-      params.push(Number(category_id));
-      wheres.push(`p.category_id = $${params.length}`);
-    }
-    if (search) {
-      params.push(`%${search}%`);
-      wheres.push(
-        `(p.name ILIKE $${params.length} OR p.barcode ILIKE $${params.length})`
-      );
-    }
+  let where = [];
+  let params = [];
+  let idx = 1;
 
-    let sql = `
-      SELECT p.*, c.name AS category_name
-      FROM products p
-      LEFT JOIN product_categories c ON p.category_id = c.id
-      ${wheres.length ? "WHERE " + wheres.join(" AND ") : ""}
-      ORDER BY p.id DESC
-    `;
-    const result = await db.query(sql, params);
-    // Return as { products: [...] }
-    res.json({ products: result.rows });
-  } catch (err) {
-    res.status(500).json({ message: "เกิดข้อผิดพลาด", error: err.message });
+  if (search) {
+    where.push(`(p.name ILIKE $${idx} OR p.barcode ILIKE $${idx})`);
+    params.push(`%${search}%`);
+    idx++;
   }
+  if (category_id && category_id !== "all") {
+    where.push(`p.category_id = $${idx}`);
+    params.push(category_id);
+    idx++;
+  }
+  const whereStr = where.length ? "WHERE " + where.join(" AND ") : "";
+
+  // นับจำนวนทั้งหมด
+  const countQ = `SELECT COUNT(*) FROM products p ${whereStr}`;
+  const countRes = await db.query(countQ, params);
+  const total = parseInt(countRes.rows[0].count);
+
+  // ดึงข้อมูลตามหน้า + JOIN product_categories
+  const offset = (page - 1) * pageSize;
+  const q = `
+    SELECT p.*, c.name AS category_name
+    FROM products p
+    LEFT JOIN product_categories c ON p.category_id = c.id
+    ${whereStr}
+    ORDER BY p.id DESC
+    LIMIT $${idx} OFFSET $${idx + 1}
+  `;
+  params.push(pageSize, offset);
+  const result = await db.query(q, params);
+
+  res.json({
+    products: result.rows,
+    total,
+    page,
+    pageSize,
+    totalPages: Math.ceil(total / pageSize),
+  });
 });
 
 // GET /api/products/barcode/:barcode

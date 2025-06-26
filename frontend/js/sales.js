@@ -45,6 +45,9 @@ document.addEventListener("DOMContentLoaded", function () {
   let cart = [];
   let customers = [];
 
+  const API_URL = "http://localhost:3000/api";
+  let accessToken = localStorage.getItem("token") || "";
+
   // --- Load customers ---
   async function loadCustomers() {
     try {
@@ -269,3 +272,150 @@ document.addEventListener("DOMContentLoaded", function () {
   loadCustomers();
   renderCart();
 });
+
+// --- ส่วนแสดงประวัติการขาย (Sales History) ---
+const API_URL = "http://localhost:3000/api";
+let accessToken = localStorage.getItem("token") || "";
+
+let salesData = [];
+let currentPage = 1;
+const pageSize = 10;
+
+document.addEventListener("DOMContentLoaded", async () => {
+  await fetchSales();
+  // Logout
+  const logoutBtn = document.getElementById("logoutBtn");
+  if (logoutBtn) {
+    logoutBtn.onclick = () => {
+      localStorage.removeItem("token");
+      window.location.href = "/index.html";
+    };
+  }
+});
+
+async function fetchSales() {
+  const res = await fetch(`${API_URL}/sales`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const data = await res.json();
+  salesData = Array.isArray(data) ? data : data.sales || [];
+  renderSalesTable();
+  renderPagination();
+}
+
+function renderSalesTable() {
+  const tbody = document.getElementById("salesTableBody");
+  if (!tbody) return;
+  let html = "";
+  const start = (currentPage - 1) * pageSize;
+  const end = start + pageSize;
+  const pageSales = salesData.slice(start, end);
+  pageSales.forEach((sale) => {
+    html += `
+      <tr>
+        <td>${new Date(sale.sale_datetime).toLocaleString()}</td>
+        <td>${sale.receipt_no}</td>
+        <td>${sale.customer_name || "-"}</td>
+        <td>฿${Number(sale.total_amount).toFixed(2)}</td>
+        <td>${sale.user_name || "-"}</td>
+        <td>
+          <button class="btn btn-sm btn-info" onclick="showSaleDetail(${sale.id})">
+            <i class="bi bi-file-earmark-text"></i> ดู
+          </button>
+        </td>
+      </tr>
+    `;
+  });
+  tbody.innerHTML = html;
+}
+
+function renderPagination() {
+  const totalPages = Math.ceil(salesData.length / pageSize);
+  const pagination = document.getElementById("salesPagination");
+  if (!pagination) return;
+  let html = "";
+
+  html += `<li class="page-item${currentPage === 1 ? " disabled" : ""}">
+    <a class="page-link" href="#" onclick="gotoPage(${currentPage - 1});return false;">&laquo;</a>
+  </li>`;
+
+  for (let i = 1; i <= totalPages; i++) {
+    html += `<li class="page-item${currentPage === i ? " active" : ""}">
+      <a class="page-link" href="#" onclick="gotoPage(${i});return false;">${i}</a>
+    </li>`;
+  }
+
+  html += `<li class="page-item${currentPage === totalPages ? " disabled" : ""}">
+    <a class="page-link" href="#" onclick="gotoPage(${currentPage + 1});return false;">&raquo;</a>
+  </li>`;
+
+  pagination.innerHTML = html;
+}
+
+window.gotoPage = function (page) {
+  const totalPages = Math.ceil(salesData.length / pageSize);
+  if (page < 1 || page > totalPages) return;
+  currentPage = page;
+  renderSalesTable();
+  renderPagination();
+};
+
+// ดูรายละเอียดบิล
+window.showSaleDetail = async function (sale_id) {
+  const res = await fetch(`${API_URL}/sales/${sale_id}/receipt`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const data = await res.json();
+  renderSaleDetail(data);
+};
+
+function renderSaleDetail({ sale, items, settings }) {
+  let subtotal = Number(sale.total_amount || 0)
+    + Number(sale.discount_amount || 0)
+    + Number(sale.redeem_discount || 0);
+
+  let html = `
+    <div>
+      <b>เลขที่บิล:</b> ${sale.receipt_no}<br>
+      <b>วันที่:</b> ${new Date(sale.sale_datetime).toLocaleString()}<br>
+      <b>ลูกค้า:</b> ${sale.customer_name || "-"}<br>
+      <b>แคชเชียร์:</b> ${sale.user_name || "-"}<br>
+    </div>
+    <hr>
+    <table class="table table-bordered">
+      <thead>
+        <tr>
+          <th>สินค้า</th>
+          <th class="text-end">จำนวน</th>
+          <th class="text-end">ราคา/หน่วย</th>
+          <th class="text-end">รวม</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${items
+          .map(
+            (i) => `
+            <tr>
+              <td>${i.product_name}${i.remark ? " (" + i.remark + ")" : ""}</td>
+              <td class="text-end">${i.quantity}</td>
+              <td class="text-end">฿${Number(i.unit_price).toFixed(2)}</td>
+              <td class="text-end">฿${(Number(i.unit_price) * Number(i.quantity)).toFixed(2)}</td>
+            </tr>
+          `
+          )
+          .join("")}
+      </tbody>
+    </table>
+    <div class="d-flex justify-content-between"><b>รวม</b><b>฿${subtotal.toFixed(2)}</b></div>
+    <div class="d-flex justify-content-between"><span>ส่วนลดโปรโมชัน</span><span>฿${Number(sale.discount_amount || 0).toFixed(2)}</span></div>
+    <div class="d-flex justify-content-between"><span>ส่วนลดจากพ้อยท์</span><span>฿${Number(sale.redeem_discount || 0).toFixed(2)} (${sale.redeem_point || 0} พ้อยท์)</span></div>
+    <div class="d-flex justify-content-between"><span>รับเงิน</span><span>฿${Number(sale.received_amount).toFixed(2)}</span></div>
+    <div class="d-flex justify-content-between"><span>เงินทอน</span><span>฿${Number(sale.change_amount).toFixed(2)}</span></div>
+    <hr>
+    <div class="d-flex justify-content-between"><span>พ้อยท์ที่ได้รับ</span><span><b>${sale.point || 0}</b> พ้อยท์</span></div>
+    <div class="d-flex justify-content-between"><span>พ้อยท์สะสมล่าสุด</span><span><b>${sale.point_total || 0}</b> พ้อยท์</span></div>
+  `;
+  document.getElementById("saleItems").innerHTML = html;
+  const modal = new bootstrap.Modal(document.getElementById("saleDetailModal"));
+  modal.show();
+}

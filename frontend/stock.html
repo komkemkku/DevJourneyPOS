@@ -58,6 +58,12 @@
                 </thead>
                 <tbody id="productTableBody"></tbody>
             </table>
+            <!-- Pagination สำหรับตารางสินค้า -->
+            <nav>
+                <ul class="pagination justify-content-center my-2" id="productPagination">
+                    <!-- JS จะเติม pagination -->
+                </ul>
+            </nav>
         </div>
     </main>
     <!-- Modal เพิ่ม/ปรับสต็อค -->
@@ -108,20 +114,25 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <div class="table-responsive">
-                        <table class="table table-sm table-bordered align-middle">
-                            <thead>
-                                <tr>
-                                    <th>วันที่</th>
-                                    <th>ประเภท</th>
-                                    <th>จำนวน</th>
-                                    <th>ผู้ทำรายการ</th>
-                                    <th>หมายเหตุ</th>
-                                </tr>
-                            </thead>
-                            <tbody id="stockHistoryBody"></tbody>
-                        </table>
-                    </div>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>วันที่</th>
+                                <th>ประเภท</th>
+                                <th>จำนวน</th>
+                                <th>โดย</th>
+                                <th>หมายเหตุ</th>
+                            </tr>
+                        </thead>
+                        <tbody id="stockHistoryBody">
+                            <!-- JS จะเติมข้อมูลตรงนี้ -->
+                        </tbody>
+                    </table>
+                    <nav>
+                        <ul class="pagination justify-content-center my-2" id="stockHistoryPagination">
+                            <!-- JS จะเติม pagination -->
+                        </ul>
+                    </nav>
                 </div>
             </div>
         </div>

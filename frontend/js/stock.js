@@ -2,9 +2,7 @@ document.addEventListener("DOMContentLoaded", function () {
   const token = localStorage.getItem("token");
   const name = localStorage.getItem("name");
   if (!token) window.location.href = "/index.html";
-  document.getElementById("userGreeting").innerText = `👤 ${
-    name || "ผู้ใช้งาน"
-  }`;
+  document.getElementById("userGreeting").innerText = `👤 ${name || "ผู้ใช้งาน"}`;
   document.getElementById("logoutBtn").onclick = () => {
     localStorage.clear();
     window.location.href = "/index.html";
@@ -26,9 +24,15 @@ document.addEventListener("DOMContentLoaded", function () {
     document.getElementById("stockHistoryModal")
   );
   const stockHistoryBody = document.getElementById("stockHistoryBody");
+  const productPagination = document.getElementById("productPagination");
 
-  let products = [];
   let categories = [];
+  let products = [];
+  let currentPage = 1;
+  const pageSize = 10;
+  let totalPages = 1;
+  let currentSearch = "";
+  let currentCategory = "";
 
   // โหลดหมวดหมู่
   async function loadCategories() {
@@ -46,34 +50,33 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
-  // โหลดสินค้า
-  async function loadProducts() {
-    const res = await fetch("http://localhost:3000/api/products", {
+  // โหลดสินค้า (pagination + filter)
+  async function loadProducts(page = 1) {
+    currentSearch = searchInput.value.trim();
+    currentCategory = categoryFilter.value;
+    let url = `http://localhost:3000/api/products?page=${page}&pageSize=${pageSize}`;
+    if (currentSearch) url += `&search=${encodeURIComponent(currentSearch)}`;
+    if (currentCategory) url += `&category_id=${currentCategory}`;
+    const res = await fetch(url, {
       headers: { Authorization: "Bearer " + token },
     });
     const data = await res.json();
     products = data.products || [];
+    totalPages = data.totalPages || 1;
+    currentPage = data.page || 1;
     renderProductTable();
+    renderProductPagination();
     renderProductSelect();
   }
 
   // ตารางสินค้า
   function renderProductTable() {
     productTableBody.innerHTML = "";
-    let q = searchInput.value.trim().toLowerCase();
-    let catId = +categoryFilter.value;
-    let filtered = products.filter(
-      (prod) =>
-        (!catId || prod.category_id == catId) &&
-        (!q ||
-          prod.name.toLowerCase().includes(q) ||
-          (prod.barcode && prod.barcode.includes(q)))
-    );
-    filtered.forEach((prod, idx) => {
+    products.forEach((prod, idx) => {
       const cat = categories.find((c) => c.id == prod.category_id);
       const tr = document.createElement("tr");
       tr.innerHTML = `
-        <td>${idx + 1}</td>
+        <td>${idx + 1 + (currentPage - 1) * pageSize}</td>
         <td>${prod.barcode || "-"}</td>
         <td>${prod.name}</td>
         <td>${cat ? cat.name : "-"}</td>
@@ -90,15 +93,46 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   }
 
+  // Pagination
+  function renderProductPagination() {
+    if (!productPagination) return;
+    let html = "";
+    html += `<li class="page-item${
+      currentPage === 1 ? " disabled" : ""
+    }">
+      <a class="page-link" href="#" onclick="return gotoProductPage(${
+        currentPage - 1
+      })">&laquo;</a>
+    </li>`;
+    for (let i = 1; i <= totalPages; i++) {
+      html += `<li class="page-item${
+        currentPage === i ? " active" : ""
+      }">
+        <a class="page-link" href="#" onclick="return gotoProductPage(${i})">${i}</a>
+      </li>`;
+    }
+    html += `<li class="page-item${
+      currentPage === totalPages ? " disabled" : ""
+    }">
+      <a class="page-link" href="#" onclick="return gotoProductPage(${
+        currentPage + 1
+      })">&raquo;</a>
+    </li>`;
+    productPagination.innerHTML = html;
+  }
+  window.gotoProductPage = function (page) {
+    if (page < 1 || page > totalPages) return false;
+    loadProducts(page);
+    return false;
+  };
+
   // Product Select สำหรับ modal เพิ่มสต็อค
   function renderProductSelect() {
     stockProductSelect.innerHTML = "";
     products.forEach((prod) => {
       const opt = document.createElement("option");
       opt.value = prod.id;
-      opt.text = `${prod.name} (${prod.barcode || "-"}) [เหลือ ${
-        prod.stock_qty
-      }]`;
+      opt.text = `${prod.name} (${prod.barcode || "-"}) [เหลือ ${prod.stock_qty}]`;
       stockProductSelect.appendChild(opt);
     });
   }
@@ -137,41 +171,88 @@ document.addEventListener("DOMContentLoaded", function () {
       });
       if (!res.ok) throw new Error("บันทึกไม่สำเร็จ");
       addStockModal.hide();
-      loadProducts();
+      loadProducts(currentPage);
     } catch (err) {
       alert(err.message);
     }
   };
 
   // ฟิลเตอร์ & search
-  searchInput.oninput = categoryFilter.onchange = renderProductTable;
+  searchInput.oninput = categoryFilter.onchange = function () {
+    loadProducts(1);
+  };
 
-  // ดูประวัติ
+  // ดูประวัติ (pagination)
   async function openStockHistoryModal(prod) {
-    const res = await fetch(
-      `http://localhost:3000/api/stock-movements?product_id=${prod.id}`,
-      {
-        headers: { Authorization: "Bearer " + token },
+    let currentHistoryPage = 1;
+    const historyPageSize = 10;
+    let totalHistoryPages = 1;
+
+    async function loadHistoryPage(page = 1) {
+      const res = await fetch(
+        `http://localhost:3000/api/stock-movements?product_id=${prod.id}&page=${page}&pageSize=${historyPageSize}`,
+        {
+          headers: { Authorization: "Bearer " + token },
+        }
+      );
+      const data = await res.json();
+      const movements = data.movements || [];
+      totalHistoryPages = data.totalPages || 1;
+      currentHistoryPage = data.page || 1;
+
+      stockHistoryBody.innerHTML = "";
+      movements.forEach((mv) => {
+        stockHistoryBody.innerHTML += `
+          <tr>
+            <td>${mv.created_at ? mv.created_at.split("T")[0] : ""}</td>
+            <td>${mv.change_type}</td>
+            <td class="fw-bold">${mv.quantity > 0 ? "+" : ""}${mv.quantity}</td>
+            <td>${mv.user_name || "-"}</td>
+            <td>${mv.note || ""}</td>
+          </tr>
+        `;
+      });
+
+      // Render pagination
+      const pagination = document.getElementById("stockHistoryPagination");
+      if (pagination) {
+        let html = "";
+        html += `<li class="page-item${
+          currentHistoryPage === 1 ? " disabled" : ""
+        }">
+          <a class="page-link" href="#" onclick="return gotoStockHistoryPage(${
+            currentHistoryPage - 1
+          })">&laquo;</a>
+        </li>`;
+        for (let i = 1; i <= totalHistoryPages; i++) {
+          html += `<li class="page-item${
+            currentHistoryPage === i ? " active" : ""
+          }">
+            <a class="page-link" href="#" onclick="return gotoStockHistoryPage(${i})">${i}</a>
+          </li>`;
+        }
+        html += `<li class="page-item${
+          currentHistoryPage === totalHistoryPages ? " disabled" : ""
+        }">
+          <a class="page-link" href="#" onclick="return gotoStockHistoryPage(${
+            currentHistoryPage + 1
+          })">&raquo;</a>
+        </li>`;
+        pagination.innerHTML = html;
       }
-    );
-    const data = await res.json();
-    const movements = data.movements || [];
-    stockHistoryBody.innerHTML = "";
-    movements.forEach((mv) => {
-      stockHistoryBody.innerHTML += `
-        <tr>
-          <td>${mv.created_at ? mv.created_at.split("T")[0] : ""}</td>
-          <td>${mv.change_type}</td>
-          <td class="fw-bold">${mv.quantity > 0 ? "+" : ""}${mv.quantity}</td>
-          <td>${mv.user_name || "-"}</td>
-          <td>${mv.note || ""}</td>
-        </tr>
-      `;
-    });
+    }
+
+    window.gotoStockHistoryPage = function (page) {
+      if (page < 1 || page > totalHistoryPages) return false;
+      loadHistoryPage(page);
+      return false;
+    };
+
+    await loadHistoryPage(1);
     stockHistoryModal.show();
   }
 
   // โหลดเริ่มต้น
   loadCategories();
-  loadProducts();
+  loadProducts(1);
 });

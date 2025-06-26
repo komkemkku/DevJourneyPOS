@@ -259,4 +259,28 @@ router.get("/:sale_id/receipt", authGuard, async (req, res) => {
   }
 });
 
+// --- ดึงประวัติการขายทั้งหมด (สำหรับตารางหน้า sales.html) ---
+router.get("/", authGuard, async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT 
+          s.id, 
+          s.sale_datetime, 
+          s.receipt_no, 
+          s.total_amount, 
+          s.customer_id,
+          c.name AS customer_name, 
+          u.name AS user_name
+        FROM sales s
+        LEFT JOIN customers c ON s.customer_id = c.id
+        LEFT JOIN users u ON s.user_id = u.id
+        ORDER BY s.sale_datetime DESC
+        LIMIT 100`
+    );
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ message: "ผิดพลาด", error: err.message });
+  }
+});
+
 module.exports = router;

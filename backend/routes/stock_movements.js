@@ -39,22 +39,97 @@ router.post("/", authGuard, async (req, res) => {
   }
 });
 
-// GET ประวัติ
+// GET ประวัติ (รองรับ pagination)
 router.get("/", authGuard, async (req, res) => {
   const { product_id } = req.query;
+  let page = parseInt(req.query.page) || 1;
+  let pageSize = parseInt(req.query.pageSize) || 10;
+  if (page < 1) page = 1;
+  if (pageSize < 1) pageSize = 10;
+
   try {
-    const q = `
-      SELECT sm.*, u.name AS user_name
+    let where = "";
+    let params = [];
+    if (product_id) {
+      where = "WHERE sm.product_id = $1";
+      params = [product_id];
+    }
+    // นับจำนวนทั้งหมด
+    const countQ = `SELECT COUNT(*) FROM stock_movements sm ${where}`;
+    const countRes = await db.query(countQ, params);
+    const total = parseInt(countRes.rows[0].count);
+
+    // ดึงข้อมูลตามหน้า
+    const offset = (page - 1) * pageSize;
+    let q = `
+      SELECT sm.*, u.name AS user_name, p.name AS product_name, p.barcode
       FROM stock_movements sm
       LEFT JOIN users u ON sm.user_id = u.id
-      WHERE ($1::int IS NULL OR sm.product_id = $1)
-      ORDER BY sm.created_at DESC LIMIT 100
+      LEFT JOIN products p ON sm.product_id = p.id
+      ${where}
+      ORDER BY sm.created_at DESC
+      LIMIT $${params.length + 1} OFFSET $${params.length + 2}
     `;
-    const result = await db.query(q, [product_id || null]);
-    res.json({ movements: result.rows });
+    params.push(pageSize, offset);
+    const result = await db.query(q, params);
+
+    res.json({
+      movements: result.rows,
+      total,
+      page,
+      pageSize,
+      totalPages: Math.ceil(total / pageSize),
+    });
   } catch (err) {
-    res.status(500).json({ message: "เกิดข้อผิดพลาด" });
+    res.status(500).json({ message: "เกิดข้อผิดพลาด", error: err.message });
   }
+});
+
+// ตัวอย่าง backend (Node.js/Express)
+router.get("/", authGuard, async (req, res) => {
+  let { page = 1, pageSize = 10, search = "", category_id = "" } = req.query;
+  page = parseInt(page);
+  pageSize = parseInt(pageSize);
+
+  let where = [];
+  let params = [];
+  let idx = 1;
+
+  if (search) {
+    where.push(`(p.name ILIKE $${idx} OR p.barcode ILIKE $${idx})`);
+    params.push(`%${search}%`);
+    idx++;
+  }
+  if (category_id) {
+    where.push(`p.category_id = $${idx}`);
+    params.push(category_id);
+    idx++;
+  }
+  const whereStr = where.length ? "WHERE " + where.join(" AND ") : "";
+
+  // นับจำนวนทั้งหมด
+  const countQ = `SELECT COUNT(*) FROM products p ${whereStr}`;
+  const countRes = await db.query(countQ, params);
+  const total = parseInt(countRes.rows[0].count);
+
+  // ดึงข้อมูลตามหน้า
+  const offset = (page - 1) * pageSize;
+  const q = `
+    SELECT * FROM products p
+    ${whereStr}
+    ORDER BY id DESC
+    LIMIT $${idx} OFFSET $${idx + 1}
+  `;
+  params.push(pageSize, offset);
+  const result = await db.query(q, params);
+
+  res.json({
+    products: result.rows,
+    total,
+    page,
+    pageSize,
+    totalPages: Math.ceil(total / pageSize),
+  });
 });
 
 module.exports = router;

@@ -29,6 +29,11 @@ document.addEventListener("DOMContentLoaded", function () {
   let categories = [];
   let productToDeleteId = null;
 
+  const API_URL = "http://localhost:3000/api";
+  let currentPage = 1;
+  const pageSize = 10;
+  let totalPages = 1;
+
   // --- ปุ่มสุ่มบาร์โค้ด ---
   document
     .getElementById("generateBarcodeBtn")
@@ -73,16 +78,21 @@ document.addEventListener("DOMContentLoaded", function () {
   }
 
   // --- โหลดสินค้าจาก API ---
-  async function loadProducts() {
+  async function loadProducts(page = 1) {
     productTableBody.innerHTML = "";
     emptyProductAlert.classList.add("d-none");
     try {
-      const res = await fetch("http://localhost:3000/api/products", {
-        headers: { Authorization: "Bearer " + token },
-      });
+      const res = await fetch(
+        `${API_URL}/products?page=${page}&pageSize=${pageSize}`,
+        {
+          headers: { Authorization: "Bearer " + token },
+        }
+      );
       const data = await res.json();
       products = data.products || data;
+      totalPages = data.totalPages || 1;
       renderTable();
+      renderPagination(data.page, totalPages);
     } catch (err) {
       emptyProductAlert.classList.remove("d-none");
       emptyProductAlert.innerText = "เกิดข้อผิดพลาดในการโหลดสินค้า";
@@ -100,7 +110,7 @@ document.addEventListener("DOMContentLoaded", function () {
     products.forEach((prod, idx) => {
       const tr = document.createElement("tr");
       tr.innerHTML = `
-        <td>${idx + 1}</td>
+        <td>${idx + 1 + (currentPage - 1) * pageSize}</td>
         <td>${prod.barcode || "-"}</td>
         <td>${prod.name}</td>
         <td>${prod.category_name || "-"}</td>
@@ -136,6 +146,44 @@ document.addEventListener("DOMContentLoaded", function () {
       productTableBody.appendChild(tr);
     });
   }
+
+  function renderPagination(page, totalPages) {
+    currentPage = page;
+    const pagination = document.getElementById("productsPagination");
+    if (!pagination) return;
+    let html = "";
+
+    html += `<li class="page-item${
+      page === 1 ? " disabled" : ""
+    }">
+    <a class="page-link" href="#" onclick="gotoProductPage(${
+      page - 1
+    });return false;">&laquo;</a>
+  </li>`;
+
+    for (let i = 1; i <= totalPages; i++) {
+      html += `<li class="page-item${
+        page === i ? " active" : ""
+      }">
+      <a class="page-link" href="#" onclick="gotoProductPage(${i});return false;">${i}</a>
+    </li>`;
+    }
+
+    html += `<li class="page-item${
+      page === totalPages ? " disabled" : ""
+    }">
+    <a class="page-link" href="#" onclick="gotoProductPage(${
+      page + 1
+    });return false;">&raquo;</a>
+  </li>`;
+
+    pagination.innerHTML = html;
+  }
+
+  window.gotoProductPage = function (page) {
+    if (page < 1 || page > totalPages) return;
+    loadProducts(page);
+  };
 
   // --- Modal เพิ่ม/แก้ไข สินค้า ---
   document
@@ -270,5 +318,5 @@ document.addEventListener("DOMContentLoaded", function () {
     });
 
   // --- โหลดสินค้าแรกเข้า ---
-  loadProducts();
+  loadProducts(1);
 });
