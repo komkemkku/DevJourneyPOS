@@ -40,7 +40,7 @@ document.addEventListener("DOMContentLoaded", function () {
         localStorage.setItem("token", data.token);
         localStorage.setItem("name", data.name);
         localStorage.setItem("role", data.role);
-        window.location.href = "/frontend/main.html"; // ไปหน้า main หลัก POS
+        window.location.href = "/frontend/main.html";
       } else {
         showAlert(data.message || "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง");
         passwordInput.value = "";
