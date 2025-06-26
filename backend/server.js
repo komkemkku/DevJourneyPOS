@@ -7,7 +7,14 @@ const bodyParser = require("body-parser");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(cors());
+app.use(cors({
+  origin: [
+    "http://localhost:5500",
+    "https://https://dev-journey-pos.vercel.app/",
+    "https://devjourneypos-production.up.railway.app"
+  ],
+  credentials: true
+}));
 app.use(bodyParser.json());
 
 // Login
