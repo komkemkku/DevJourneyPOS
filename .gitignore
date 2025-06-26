@@ -45,3 +45,4 @@ backend/build/
 
 # Optional: ignore generated files from DBeaver, DB GUI, etc.
 *.dbeaver-data-sources.xml
+.vercel
