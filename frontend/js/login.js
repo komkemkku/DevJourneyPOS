@@ -23,7 +23,7 @@ document.addEventListener("DOMContentLoaded", function () {
     loginAlert.classList.add("d-none");
 
     try {
-      const response = await fetch("http://devjourneypos-production.up.railway.app/api/login", {
+      const response = await fetch("http://postgres-pos-production.up.railway.app/api/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password }),
