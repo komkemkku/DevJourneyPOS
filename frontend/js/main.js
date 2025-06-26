@@ -1,4 +1,4 @@
-const API_URL = "http://localhost:3000/api";
+const API_URL = "http://devjourneypos-production.up.railway.app/api";
 let accessToken = localStorage.getItem("token") || "";
 
 let products = [];
