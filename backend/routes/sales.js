@@ -17,7 +17,7 @@ function authGuard(req, res, next) {
   }
 }
 
-// --- สร้างบิลขายใหม่ (และลด stock อัตโนมัติ) ---
+// --- สร้างบิลขายใหม่ (ลด stock, ใส่โปรโมชัน, log stock) ---
 router.post("/", authGuard, async (req, res) => {
   const {
     customer_id,
@@ -26,8 +26,13 @@ router.post("/", authGuard, async (req, res) => {
     change_amount,
     total_amount,
     remark,
-    sale_items, // array [{ product_id, quantity, unit_price, cost_price, total_price }]
+    items, // [{ product_id, qty, unit_price, remark }]
+    promotion_id,
+    discount_amount, // number
   } = req.body;
+
+  if (!items || !Array.isArray(items) || items.length === 0)
+    return res.status(400).json({ message: "ต้องมีสินค้าอย่างน้อย 1 รายการ" });
 
   const user_id = req.user.id;
   const client = await db.connect();
@@ -39,9 +44,9 @@ router.post("/", authGuard, async (req, res) => {
     // Insert sales
     const saleResult = await client.query(
       `INSERT INTO sales
-        (receipt_no, sale_datetime, user_id, customer_id, total_amount, payment_method, received_amount, change_amount, remark)
+        (receipt_no, sale_datetime, user_id, customer_id, total_amount, payment_method, received_amount, change_amount, remark, discount_id, discount_amount, created_at)
        VALUES
-        ($1, NOW(), $2, $3, $4, $5, $6, $7, $8)
+        ($1, NOW(), $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
        RETURNING *`,
       [
         receiptNo,
@@ -52,13 +57,22 @@ router.post("/", authGuard, async (req, res) => {
         received_amount,
         change_amount,
         remark || null,
+        promotion_id || null,
+        discount_amount || 0,
       ]
     );
     const sale = saleResult.rows[0];
     const sale_id = sale.id;
 
-    // Insert sale_items
-    for (const item of sale_items) {
+    // Insert sale_items + ลด stock + log
+    for (const item of items) {
+      // Get cost price
+      const prod = await client.query(
+        `SELECT cost_price FROM products WHERE id=$1`,
+        [item.product_id]
+      );
+      const cost_price = prod.rows[0]?.cost_price || 0;
+      const total_price = item.qty * item.unit_price;
       await client.query(
         `INSERT INTO sale_items
           (sale_id, product_id, quantity, unit_price, cost_price, total_price, remark)
@@ -66,25 +80,44 @@ router.post("/", authGuard, async (req, res) => {
         [
           sale_id,
           item.product_id,
-          item.quantity,
+          item.qty,
           item.unit_price,
-          item.cost_price,
-          item.total_price,
+          cost_price,
+          total_price,
           item.remark || null,
         ]
       );
-      // อัปเดต stock
+      // อัปเดต stock (ใน products)
       await client.query(
         `UPDATE products SET stock_qty = stock_qty - $1 WHERE id=$2`,
-        [item.quantity, item.product_id]
+        [item.qty, item.product_id]
+      );
+      // log การเคลื่อนไหว stock
+      await client.query(
+        `INSERT INTO stock_movements
+          (product_id, change_type, quantity, user_id, ref_id, note, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+        [item.product_id, "sell", -item.qty, user_id, sale_id, "ขายสินค้า"]
+      );
+    }
+
+    // ถ้ามีโปรโมชัน
+    if (promotion_id) {
+      const promo = await client.query(
+        `SELECT name FROM promotions WHERE id=$1`,
+        [promotion_id]
+      );
+      await client.query(
+        `INSERT INTO sale_promotions (sale_id, promotion_id, promotion_name, amount)
+         VALUES ($1, $2, $3, $4)`,
+        [sale_id, promotion_id, promo.rows[0]?.name || "", discount_amount || 0]
       );
     }
 
     await client.query("COMMIT");
     res.json({
       ...sale,
-      id: sale.id,
-      sale_id: sale.id,
+      sale_id,
       message: "ขายสินค้าสำเร็จ",
     });
   } catch (err) {
@@ -111,7 +144,7 @@ router.get("/:sale_id/receipt", authGuard, async (req, res) => {
     if (sale.rows.length === 0) {
       return res.status(404).json({ message: "ไม่พบใบเสร็จ" });
     }
-    // 2. รายการสินค้า (!!! ไม่มี p.code เปลี่ยนเป็น p.barcode)
+    // 2. รายการสินค้า
     const items = await db.query(
       `SELECT si.*, p.name AS product_name, p.barcode
        FROM sale_items si
@@ -119,10 +152,8 @@ router.get("/:sale_id/receipt", authGuard, async (req, res) => {
        WHERE si.sale_id = $1`,
       [sale_id]
     );
-    // 3. Settings ร้านค้า (ดึงแค่ row เดียว)
-    const settings = await db.query(
-      `SELECT * FROM settings ORDER BY id LIMIT 1`
-    );
+    // 3. Settings ร้านค้า (ดึง row เดียว)
+    const settings = await db.query(`SELECT * FROM settings LIMIT 1`);
     res.json({
       sale: sale.rows[0],
       items: items.rows,

@@ -18,23 +18,45 @@ function authGuard(req, res, next) {
   }
 }
 
-// GET /api/products
+// GET /api/products?is_active=true&category_id=...&search=...
 router.get("/", authGuard, async (req, res) => {
   try {
-    const result = await db.query(`
+    let { is_active, category_id, search } = req.query;
+    let wheres = [];
+    let params = [];
+
+    // ใช้เฉพาะฝั่ง POS (ถ้าไม่ส่งมาก็ไม่กรอง)
+    if (typeof is_active !== "undefined") {
+      params.push(is_active === "true" ? true : false);
+      wheres.push(`p.is_active = $${params.length}`);
+    }
+    if (category_id) {
+      params.push(Number(category_id));
+      wheres.push(`p.category_id = $${params.length}`);
+    }
+    if (search) {
+      params.push(`%${search}%`);
+      wheres.push(
+        `(p.name ILIKE $${params.length} OR p.barcode ILIKE $${params.length})`
+      );
+    }
+
+    let sql = `
       SELECT p.*, c.name AS category_name
       FROM products p
       LEFT JOIN product_categories c ON p.category_id = c.id
+      ${wheres.length ? "WHERE " + wheres.join(" AND ") : ""}
       ORDER BY p.id DESC
-    `);
+    `;
+    const result = await db.query(sql, params);
+    // Return as { products: [...] }
     res.json({ products: result.rows });
   } catch (err) {
-    res.status(500).json({ message: "เกิดข้อผิดพลาด" });
+    res.status(500).json({ message: "เกิดข้อผิดพลาด", error: err.message });
   }
 });
 
 // GET /api/products/barcode/:barcode
-// ตรวจสอบบาร์โค้ดซ้ำ (รองรับ ?exclude=<id>)
 router.get("/barcode/:barcode", authGuard, async (req, res) => {
   const { barcode } = req.params;
   const excludeId = req.query.exclude;
@@ -90,7 +112,6 @@ router.post("/", authGuard, async (req, res) => {
     );
     res.json(result.rows[0]);
   } catch (err) {
-    // เช็ค unique constraint บาร์โค้ด
     if (err.code === "23505") {
       return res.status(400).json({ message: "บาร์โค้ดนี้มีในระบบแล้ว" });
     }
